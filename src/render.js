@@ -1,5 +1,5 @@
 let nextUnitOfWork = null;
-let currentRoot = null;
+let currentRoot = null; // 最后一次 commit 到 DOM 的一棵 Fiber Tree
 let wipRoot = null;
 let deletions = null;
 
@@ -15,6 +15,7 @@ const isNew = (prev, next) => key => prev[key] !== next[key];
 const isGone = (next) => key => !(key in next);
 
 export default function render (element, container) {
+    console.log('render');
     wipRoot = nextUnitOfWork = { // 们会跟踪 Fiber Tree 的根节点。我们称它为「进行中的 root」
         dom: container,
         props: {
@@ -23,7 +24,6 @@ export default function render (element, container) {
         alternate: currentRoot
     }
     deletions = [];
-    console.log('render');
 }
 
 function workLoop (deadline) {
@@ -33,7 +33,6 @@ function workLoop (deadline) {
     while (nextUnitOfWork && !shouldYield) {
         nextUnitOfWork = performUnitOfWork(nextUnitOfWork); // 该函数不仅会执行工作单元，还会返回下一个工作单元
     }
-
     shouldYield = deadline.timeRemaining() < 1; // requestIdleCallback 还为我们提供了 deadline 参数。我们可以用它来检查在浏览器需要再次控制之前我们有多少时间。
 
     // 一旦完成所有工作（直到没有 nextUnitOfWork)，我们便将整个 Fiber Tree 交给 DOM
@@ -46,9 +45,13 @@ function workLoop (deadline) {
 
 function performUnitOfWork (fiber) {
     console.log('performUnitOfWork');
-    // TODO add dom node
-    if (!fiber.dom) {
-        fiber.dom = createDom(fiber); // 创建这个fiber的dom
+
+    // 检查 fiber.type 是否是 function, 根据不同的结果来使用不同的更新函数
+    const isFunctionComponent = fiber.type instanceof Function;
+    if (isFunctionComponent) {
+        updateFunctionComponent(fiber);
+    } else {
+        updateHostComponent(fiber);
     }
 
     // 将「添加节点至 DOM」这个动作延迟至所有节点 render 完成。这个动作也被称为 commit。
@@ -56,10 +59,6 @@ function performUnitOfWork (fiber) {
     // if (fiber.parent) {
     //     fiber.parent.dom.appendChild(fiber.dom); // 将这个fiber的dom append到它的父元素上
     // }
-
-    // TODO create new fibers
-    const elements = fiber.props.children;
-    reconcileChildren(fiber, elements);
 
     // TODO return next unit of work
     // 最后，我们选出下一个工作单元。首先寻找 child ,其次 sibling ,然后是 uncle （ parent 的 sibling）。
@@ -128,11 +127,12 @@ function reconcileChildren (wipFiber, elements) {
     }
 }
 
+// 将「添加节点至 DOM」这个动作延迟至所有节点 render 完成。这个动作也被称为 commit。
+// 为什么要分阶段：每当我们在处理一个 React element 时，我们都会添加一个新的节点到 DOM 中，而浏览器在渲染完成整个树之前可能会中断我们的工作。在这种情况下，用户将会看不到完整的 UI。
 function commitRoot () {
     deletions.forEach(commitWork);
     commitWork(wipRoot.child);
-    // currentRoot: 最后一次 commit 到 DOM 的一棵 Fiber Tree
-    currentRoot = wipRoot;
+    currentRoot = wipRoot; // 最后一次 commit 到 DOM 的一棵 Fiber Tree
     wipRoot = null;
 }
 
@@ -142,14 +142,18 @@ function commitRoot () {
 function commitWork (fiber) {
     if (!fiber) return;
 
-    const parentDom = fiber.parent.dom;
+    let parentFiber = fiber.parent;
+    while (!parentFiber.dom) {
+        parentFiber = parentFiber.parent;
+    }
+    const parentDom = parentFiber.dom;
 
     if (fiber.effectTag === "PLACEMENT" && fiber.dom !== null) {
         parentDom.appendChild(fiber.dom);
     } else if (fiber.effectTag === "UPDATE" && fiber.dom !== null) {
         updateDom(fiber.dom, fiber.alternate.props, fiber.props);
     } else if (fiber.effectTag === "DELETION") {
-        parentDom.removeChild(fiber.dom);
+        commitDeletion(fiber, parentDom);
     }
 
     commitWork(fiber.child);
@@ -194,7 +198,7 @@ function updateDom (dom, prevProps, nextProps) {
 }
 
 function createDom (fiber) {
-    console.log('createDom');
+    console.log('createDom', fiber.type);
     const dom = fiber.type === 'TEXT_ELEMENT' ? document.createTextNode("") : document.createElement(fiber.type);
 
     updateDom(dom, {}, fiber.props);
@@ -205,4 +209,26 @@ function createDom (fiber) {
     // }
 
     return dom
+}
+
+function updateFunctionComponent (fiber) {
+    const children = [fiber.type(fiber.props)]; // 在 updateFunctionComponent 中，我们执行函数以获取children 。一旦我们拿到了 children ，reconciliation 的过程其实是一样的。
+    console.log(children);
+    reconcileChildren(fiber, children);
+}
+
+function updateHostComponent (fiber) {
+    if (!fiber.dom) {
+        fiber.dom = createDom(fiber)
+    }
+
+    reconcileChildren(fiber, fiber.props.children);
+}
+
+function commitDeletion (fiber, parentDom) {
+    if (fiber.dom) {
+        parentDom.removeChild(fiber.dom)
+    } else {
+        commitDeletion(fiber.child, parentDom)
+    }
 }
