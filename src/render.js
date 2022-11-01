@@ -1,6 +1,8 @@
 let nextUnitOfWork = null;
 let currentRoot = null; // 最后一次 commit 到 DOM 的一棵 Fiber Tree
 let wipRoot = null;
+let wipFiber = null; // 正在执行的 Fiber
+let hookIndex = null;
 let deletions = null;
 
 // 一旦我们开始渲染，在整棵 element tree 渲染完成之前程序是不会停止的。如果这棵 element tree 过于庞大，它有可能会阻塞主进程太长时间。如果浏览器需要做类似于用户输入或者保持动画流畅这样的高优先级任务，则必须等到渲染完成为止。
@@ -14,7 +16,7 @@ const isProperty = key => key !== "children" && !isEvent(key);
 const isNew = (prev, next) => key => prev[key] !== next[key];
 const isGone = (next) => key => !(key in next);
 
-export default function render (element, container) {
+export function render (element, container) {
     console.log('render');
     wipRoot = nextUnitOfWork = { // 们会跟踪 Fiber Tree 的根节点。我们称它为「进行中的 root」
         dom: container,
@@ -212,6 +214,10 @@ function createDom (fiber) {
 }
 
 function updateFunctionComponent (fiber) {
+    wipFiber = fiber;
+    hookIndex = 0;
+    wipFiber.hooks = [];
+
     const children = [fiber.type(fiber.props)]; // 在 updateFunctionComponent 中，我们执行函数以获取children 。一旦我们拿到了 children ，reconciliation 的过程其实是一样的。
     console.log(children);
     reconcileChildren(fiber, children);
@@ -231,4 +237,39 @@ function commitDeletion (fiber, parentDom) {
     } else {
         commitDeletion(fiber.child, parentDom)
     }
+}
+
+export function useState (initial) {
+    const oldHook =
+        wipFiber.alternate &&
+        wipFiber.alternate.hooks &&
+        wipFiber.alternate.hooks[hookIndex]; // 拿到旧的 hook
+
+    const hook = {
+        state: oldHook ? oldHook.state : initial,
+        queue: []
+    };
+
+    const actions = oldHook ? oldHook.queue : [];
+
+    actions.forEach(action => {
+        console.log(hook.state);
+        hook.state = action(hook.state);
+    })
+
+    const setState = (action) => {
+        hook.queue.push(action);
+
+        wipRoot = {
+            dom: currentRoot.dom,
+            props: currentRoot.props,
+            alternate: currentRoot
+        };
+        nextUnitOfWork = wipRoot; // rerender
+        deletions = [];
+    }
+
+    wipFiber.hooks.push(hook);
+    hookIndex++;
+    return [hook.state, setState];
 }

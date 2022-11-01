@@ -1,9 +1,10 @@
 import createElement from './createElement.js'
-import render from './render.js'
+import { render, useState } from './render.js'
 
 const MyyReact = {
     createElement,
-    render
+    render,
+    useState
 };
 
 // /** @jsx MyyReact.createElement */
@@ -45,25 +46,33 @@ const MyyReact = {
 
 
 /** @jsx MyyReact.createElement */
-function App (props) {
-    return <h1>
-        <div>hello function component</div>
-    </h1>
-}
-const element = <App name="foo" />
-MyyReact.render(element, document.querySelector("#root"))
+// function App (props) {
+//     return <h1>
+//         <div>hello function component</div>
+//     </h1>
+// }
+// const element = <App name="foo" />
+// MyyReact.render(element, document.querySelector("#root"))
 
 
 
 /** @jsx MyyReact.createElement */
-// function Counter() {
-//   const [state, setState] = MyyReact.useState(1)
-//   return (
-//     <h1 onClick={() => setState(c => c + 1)}>
-//       Count: {state}
-//     </h1>
-//   )
-// }
-// const element = <Counter />
-// const container = document.getElementById("root")
-// MyyReact.render(element, container);
+function Counter () {
+    const frameworks = ['React', 'Vue', 'Svelte'];
+    const [state, setState] = MyyReact.useState(1);
+    const [framework, setFramework] = MyyReact.useState("React");
+
+    return (
+        <div>
+            <h1>hello, this is {framework}!!</h1>
+            <button onClick={() => {
+                setFramework(() => frameworks[state % frameworks.length])
+                setState(c => c + 1)
+            }}>change</button>
+            <h1 >
+                Count: {state}
+            </h1>
+        </div>
+    )
+}
+MyyReact.render(<Counter />, document.getElementById("root"));
